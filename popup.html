@@ -68,6 +68,19 @@
       </section>
 
       <section class="card section">
+        <div class="row between">
+          <h2>Batch Queue</h2>
+          <span id="batchCount">0</span>
+        </div>
+        <div class="row gap">
+          <button id="addBatchBtn">Add All High Confidence</button>
+          <button id="clearBatchBtn" class="ghost">Clear Queue</button>
+        </div>
+        <ul id="batchList" class="batch-list"></ul>
+        <p class="hint">Low confidence items are flagged so you can review before adding.</p>
+      </section>
+
+      <section class="card section">
         <div class="row gap">
           <button id="downloadBtn">Download Qudoro JSON</button>
           <button id="copyBtn" class="ghost">Copy JSON</button>

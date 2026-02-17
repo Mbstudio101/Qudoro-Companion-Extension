@@ -1,6 +1,7 @@
 const state = {
   cards: [],
   selectedCorrectIndex: null,
+  batchQueue: [],
 };
 
 const setTitleEl = document.getElementById('setTitle');
@@ -14,12 +15,16 @@ const cardCountEl = document.getElementById('cardCount');
 const cardsListEl = document.getElementById('cardsList');
 const correctAnswerBlockEl = document.getElementById('correctAnswerBlock');
 const correctAnswerListEl = document.getElementById('correctAnswerList');
+const batchCountEl = document.getElementById('batchCount');
+const batchListEl = document.getElementById('batchList');
 
 const addCardBtn = document.getElementById('addCardBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const copyBtn = document.getElementById('copyBtn');
 const captureSelectionBtn = document.getElementById('captureSelectionBtn');
 const pasteClipboardBtn = document.getElementById('pasteClipboardBtn');
+const addBatchBtn = document.getElementById('addBatchBtn');
+const clearBatchBtn = document.getElementById('clearBatchBtn');
 
 const now = () => Date.now();
 
@@ -63,6 +68,14 @@ function detectAnswerFromRaw(raw, options) {
     .filter(Boolean);
 
   for (const line of lines) {
+    const markedOption = line.match(/^(?:[-*•]\s*)?(?:\(?([A-Za-z0-9]{1,2})\)?[).:\-]?\s+)(.+)\s*(?:\(correct\)|\*|✔)$/i);
+    if (markedOption) {
+      const tokenIdx = parseAnswerTokenToIndex(markedOption[1], options);
+      if (tokenIdx !== null) return tokenIdx;
+      const textIdx = parseAnswerTokenToIndex(markedOption[2], options);
+      if (textIdx !== null) return textIdx;
+    }
+
     const match = line.match(/^(?:answer|ans|correct)\s*[:\-]?\s*(.+)$/i);
     if (!match) continue;
     const token = cleanText(match[1]);
@@ -130,7 +143,6 @@ function parseQuestionBlock(raw) {
   const fallbackAnswer = directAnswer !== null ? directAnswer : detectAnswerFromRaw(text, options);
 
   const frontText = frontLines.join(' ').replace(/^(?:q(?:uestion)?\s*[:.)\-]\s*)/i, '').trim();
-
   const backMatch = trailingText.match(/(?:^|\n)\s*(?:answer|ans|correct)\s*[:\-]?\s*(.+)$/i);
   const back = backMatch ? cleanText(backMatch[1]) : '';
 
@@ -140,6 +152,58 @@ function parseQuestionBlock(raw) {
     options,
     correctIndex: fallbackAnswer,
   };
+}
+
+function scoreConfidence(parsed) {
+  let score = 0;
+  if (parsed.front && parsed.front.length >= 12) score += 0.35;
+  if (/[?]$/.test(parsed.front)) score += 0.1;
+  if (parsed.options.length >= 2) score += 0.25;
+  if (parsed.options.length >= 3) score += 0.1;
+  if (parsed.correctIndex !== null) score += 0.2;
+  if (!parsed.options.length && parsed.back.length >= 8) score += 0.15;
+  return Math.min(1, Number(score.toFixed(2)));
+}
+
+function splitIntoBlocks(raw) {
+  const text = cleanText(raw);
+  if (!text) return [];
+
+  const byBlankLines = text.split(/\n\s*\n+/).map(cleanText).filter(Boolean);
+  if (byBlankLines.length > 1) return byBlankLines;
+
+  const lines = text.split('\n');
+  const starts = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (/^(?:q(?:uestion)?\s*)?\d{1,3}[).:\-]\s+\S+/i.test(line)) starts.push(i);
+  }
+
+  if (starts.length < 2) return [text];
+
+  const blocks = [];
+  for (let i = 0; i < starts.length; i += 1) {
+    const start = starts[i];
+    const end = i + 1 < starts.length ? starts[i + 1] : lines.length;
+    const block = cleanText(lines.slice(start, end).join('\n'));
+    if (block) blocks.push(block);
+  }
+  return blocks.length ? blocks : [text];
+}
+
+function parseBatchInput(raw) {
+  const blocks = splitIntoBlocks(raw);
+  return blocks
+    .map((block) => {
+      const parsed = parseQuestionBlock(block);
+      return {
+        id: uid(),
+        parsed,
+        confidence: scoreConfidence(parsed),
+        isLowConfidence: scoreConfidence(parsed) < 0.55,
+      };
+    })
+    .filter((item) => item.parsed.front || item.parsed.options.length || item.parsed.back);
 }
 
 function renderCorrectAnswerPicker() {
@@ -212,12 +276,69 @@ function renderCards() {
   });
 }
 
+function renderBatchQueue() {
+  batchListEl.innerHTML = '';
+  batchCountEl.textContent = String(state.batchQueue.length);
+
+  state.batchQueue.forEach((item, index) => {
+    const li = document.createElement('li');
+    li.className = 'batch-item';
+
+    const head = document.createElement('div');
+    head.className = 'batch-head';
+
+    const question = document.createElement('div');
+    question.className = 'batch-question';
+    question.textContent = `${index + 1}. ${item.parsed.front || '(Missing question)'}`;
+
+    const badge = document.createElement('span');
+    badge.className = `badge ${item.isLowConfidence ? 'badge-low' : 'badge-high'}`;
+    badge.textContent = `${item.isLowConfidence ? 'Low' : 'High'} ${(item.confidence * 100).toFixed(0)}%`;
+
+    head.appendChild(question);
+    head.appendChild(badge);
+
+    const meta = document.createElement('div');
+    meta.className = 'batch-meta';
+    meta.textContent = `${item.parsed.options.length} option(s)${item.parsed.correctIndex !== null ? ' • answer detected' : ''}`;
+
+    const actions = document.createElement('div');
+    actions.className = 'batch-actions';
+
+    const useBtn = document.createElement('button');
+    useBtn.className = 'ghost';
+    useBtn.textContent = 'Use';
+    useBtn.addEventListener('click', () => loadParsedIntoEditor(item.parsed));
+
+    const addBtn = document.createElement('button');
+    addBtn.textContent = 'Add';
+    addBtn.addEventListener('click', () => addSingleBatchItem(item.id));
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'ghost';
+    removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', () => {
+      state.batchQueue = state.batchQueue.filter((entry) => entry.id !== item.id);
+      renderBatchQueue();
+    });
+
+    actions.appendChild(useBtn);
+    actions.appendChild(addBtn);
+    actions.appendChild(removeBtn);
+
+    li.appendChild(head);
+    li.appendChild(meta);
+    li.appendChild(actions);
+    batchListEl.appendChild(li);
+  });
+}
+
 function showMessage(message, isError = false) {
   addMessageEl.textContent = message;
   addMessageEl.style.color = isError ? '#dc2626' : '#16a34a';
   setTimeout(() => {
     if (addMessageEl.textContent === message) addMessageEl.textContent = '';
-  }, 2500);
+  }, 3000);
 }
 
 function currentSetMeta() {
@@ -226,32 +347,19 @@ function currentSetMeta() {
   return { title, description };
 }
 
-function createCardFromInputs() {
-  const front = cleanText(frontTextEl.value);
-  const back = cleanText(backTextEl.value);
-  const options = parseOptions(optionsTextEl.value);
-  const isMc = Boolean(isMultipleChoiceEl.checked && options.length >= 2);
+function buildCard(front, back, options, correctIndex) {
+  const isMc = options.length >= 2;
+  if (!front) return null;
 
-  if (!front) {
-    showMessage('Question/front is required.', true);
-    return;
+  if (!isMc && !back) return null;
+
+  if (isMc && (correctIndex === null || correctIndex < 0 || correctIndex >= options.length)) {
+    return null;
   }
 
-  if (!isMc && !back) {
-    showMessage('Back/answer is required for non-multiple-choice cards.', true);
-    return;
-  }
+  const answerText = isMc ? options[correctIndex] : back;
 
-  let answerText = back;
-  if (isMc) {
-    if (state.selectedCorrectIndex === null || state.selectedCorrectIndex >= options.length) {
-      showMessage('Choose the correct option before adding this card.', true);
-      return;
-    }
-    answerText = options[state.selectedCorrectIndex];
-  }
-
-  const card = {
+  return {
     id: uid(),
     content: front,
     rationale: back || answerText,
@@ -267,6 +375,19 @@ function createCardFromInputs() {
     repetitions: 0,
     interval: 0,
   };
+}
+
+function createCardFromInputs() {
+  const front = cleanText(frontTextEl.value);
+  const back = cleanText(backTextEl.value);
+  const options = parseOptions(optionsTextEl.value);
+  const isMc = Boolean(isMultipleChoiceEl.checked && options.length >= 2);
+
+  const card = buildCard(front, back, isMc ? options : [], isMc ? state.selectedCorrectIndex : null);
+  if (!card) {
+    showMessage('Review this card: missing question, answer, or correct option.', true);
+    return;
+  }
 
   state.cards.push(card);
   persist();
@@ -279,6 +400,79 @@ function createCardFromInputs() {
   isMultipleChoiceEl.checked = false;
   state.selectedCorrectIndex = null;
   renderCorrectAnswerPicker();
+}
+
+function loadParsedIntoEditor(parsed) {
+  frontTextEl.value = parsed.front;
+  backTextEl.value = parsed.back;
+  optionsTextEl.value = '';
+  isMultipleChoiceEl.checked = false;
+  state.selectedCorrectIndex = null;
+
+  if (parsed.options.length >= 2) {
+    optionsTextEl.value = parsed.options.join('\n');
+    isMultipleChoiceEl.checked = true;
+    state.selectedCorrectIndex = parsed.correctIndex;
+  }
+
+  renderCorrectAnswerPicker();
+}
+
+function addSingleBatchItem(itemId) {
+  const item = state.batchQueue.find((entry) => entry.id === itemId);
+  if (!item) return;
+
+  const card = buildCard(item.parsed.front, item.parsed.back, item.parsed.options, item.parsed.correctIndex);
+  if (!card) {
+    loadParsedIntoEditor(item.parsed);
+    showMessage('Could not auto-add this item. Review and choose the correct option.', true);
+    return;
+  }
+
+  state.cards.push(card);
+  state.batchQueue = state.batchQueue.filter((entry) => entry.id !== itemId);
+  persist();
+  renderCards();
+  renderBatchQueue();
+  showMessage('Batch item added.');
+}
+
+function addAllHighConfidence() {
+  if (!state.batchQueue.length) {
+    showMessage('Batch queue is empty.', true);
+    return;
+  }
+
+  const highConfidence = state.batchQueue.filter((item) => !item.isLowConfidence);
+  if (!highConfidence.length) {
+    showMessage('No high-confidence items to auto-add.', true);
+    return;
+  }
+
+  let added = 0;
+  const remaining = [];
+
+  state.batchQueue.forEach((item) => {
+    if (item.isLowConfidence) {
+      remaining.push(item);
+      return;
+    }
+
+    const card = buildCard(item.parsed.front, item.parsed.back, item.parsed.options, item.parsed.correctIndex);
+    if (!card) {
+      remaining.push(item);
+      return;
+    }
+
+    state.cards.push(card);
+    added += 1;
+  });
+
+  state.batchQueue = remaining;
+  persist();
+  renderCards();
+  renderBatchQueue();
+  showMessage(`Added ${added} card(s). ${remaining.length} item(s) still need review.`);
 }
 
 function buildQudoroExport() {
@@ -326,26 +520,29 @@ async function copyExportToClipboard() {
 }
 
 function applyParsedContent(raw, sourceLabel) {
-  const parsed = parseQuestionBlock(raw);
-  if (!parsed.front && parsed.options.length === 0 && !parsed.back) {
+  const parsedItems = parseBatchInput(raw);
+  if (!parsedItems.length) {
     showMessage(`No usable text found from ${sourceLabel}.`, true);
     return;
   }
 
-  frontTextEl.value = parsed.front;
-  backTextEl.value = parsed.back;
-  optionsTextEl.value = '';
-  isMultipleChoiceEl.checked = false;
-  state.selectedCorrectIndex = null;
-
-  if (parsed.options.length >= 2) {
-    optionsTextEl.value = parsed.options.join('\n');
-    isMultipleChoiceEl.checked = true;
-    state.selectedCorrectIndex = parsed.correctIndex;
+  if (parsedItems.length === 1) {
+    loadParsedIntoEditor(parsedItems[0].parsed);
+    const isLow = parsedItems[0].isLowConfidence;
+    showMessage(
+      `${sourceLabel} parsed${isLow ? ' (low confidence, please review).' : '.'}`,
+      isLow
+    );
+    return;
   }
 
-  renderCorrectAnswerPicker();
-  showMessage(`${sourceLabel} parsed.`);
+  state.batchQueue = [...state.batchQueue, ...parsedItems];
+  renderBatchQueue();
+  loadParsedIntoEditor(parsedItems[0].parsed);
+
+  const lowCount = parsedItems.filter((item) => item.isLowConfidence).length;
+  const msg = `${sourceLabel} parsed ${parsedItems.length} items. ${lowCount} low-confidence.`;
+  showMessage(msg, lowCount > 0);
 }
 
 async function captureFromSelection() {
@@ -399,6 +596,11 @@ optionsTextEl.addEventListener('input', () => {
 });
 isMultipleChoiceEl.addEventListener('change', renderCorrectAnswerPicker);
 addCardBtn.addEventListener('click', createCardFromInputs);
+addBatchBtn.addEventListener('click', addAllHighConfidence);
+clearBatchBtn.addEventListener('click', () => {
+  state.batchQueue = [];
+  renderBatchQueue();
+});
 downloadBtn.addEventListener('click', downloadExport);
 copyBtn.addEventListener('click', () => {
   copyExportToClipboard().catch(() => showMessage('Clipboard copy failed.', true));
@@ -412,4 +614,5 @@ pasteClipboardBtn.addEventListener('click', () => {
 
 hydrate();
 renderCards();
+renderBatchQueue();
 renderCorrectAnswerPicker();

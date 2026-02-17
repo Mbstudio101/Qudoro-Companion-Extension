@@ -190,6 +190,71 @@ button.ghost {
   color: #2563eb;
 }
 
+.batch-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 170px;
+  overflow: auto;
+  display: grid;
+  gap: 6px;
+}
+
+.batch-item {
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.batch-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.badge {
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
+.badge-high {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.badge-low {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.batch-question {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-meta {
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.batch-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.batch-actions button {
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
 @media (prefers-color-scheme: dark) {
   body {
     background: #0b1220;
@@ -233,5 +298,19 @@ button.ghost {
 
   .correct-item.active .check {
     color: #93c5fd;
+  }
+
+  .batch-item {
+    border-color: #334155;
+  }
+
+  .badge-high {
+    color: #86efac;
+    background: #14532d;
+  }
+
+  .badge-low {
+    color: #fca5a5;
+    background: #7f1d1d;
   }
 }
