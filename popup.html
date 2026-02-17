@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Qudoro Companion</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="header">
+        <h1>Qudoro Companion</h1>
+        <p>Build a set from web content and export for Qudoro import.</p>
+      </header>
+
+      <section class="card section">
+        <label for="setTitle">Set Title</label>
+        <input id="setTitle" type="text" placeholder="Biology Chapter 3" />
+
+        <label for="setDescription">Set Description</label>
+        <textarea id="setDescription" rows="2" placeholder="Quick review set"></textarea>
+      </section>
+
+      <section class="card section">
+        <div class="row between">
+          <h2>Add Card</h2>
+          <button id="captureSelectionBtn" class="ghost">Capture Selection</button>
+        </div>
+
+        <label for="frontText">Front (Question/Prompt)</label>
+        <textarea id="frontText" rows="3" placeholder="What is photosynthesis?"></textarea>
+
+        <label for="backText">Back (Answer)</label>
+        <textarea id="backText" rows="3" placeholder="Process plants use to convert light to chemical energy."></textarea>
+
+        <label class="checkbox">
+          <input id="isMultipleChoice" type="checkbox" />
+          <span>Treat as multiple choice</span>
+        </label>
+
+        <label for="optionsText">Options (one per line, optional)</label>
+        <textarea id="optionsText" rows="4" placeholder="A) Option one&#10;B) Option two&#10;C) Option three"></textarea>
+
+        <button id="addCardBtn">Add Card</button>
+        <p id="addMessage" class="hint"></p>
+      </section>
+
+      <section class="card section">
+        <div class="row between">
+          <h2>Cards in Set</h2>
+          <span id="cardCount">0</span>
+        </div>
+        <ul id="cardsList" class="cards"></ul>
+      </section>
+
+      <section class="card section">
+        <div class="row gap">
+          <button id="downloadBtn">Download Qudoro JSON</button>
+          <button id="copyBtn" class="ghost">Copy JSON</button>
+        </div>
+        <p class="hint">
+          In Qudoro: <strong>Settings -> Data -> Import Data</strong> and choose the downloaded file.
+        </p>
+      </section>
+    </main>
+
+    <script src="./popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Qudoro Companion",
+  "version": "1.0.0",
+  "description": "Capture study content from the web and export Qudoro-compatible Question + Flashcard sets.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "action": {
+    "default_title": "Qudoro Companion",
+    "default_popup": "popup.html"
+  }
+}
