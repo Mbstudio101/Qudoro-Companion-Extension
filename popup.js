@@ -22,6 +22,7 @@ const batchListEl = document.getElementById('batchList');
 const openAiKeyEl = document.getElementById('openAiKey');
 const ocrImageInputEl = document.getElementById('ocrImageInput');
 const forceAddDuplicatesEl = document.getElementById('forceAddDuplicates');
+const noteInputEl = document.getElementById('noteInput');
 
 const addCardBtn = document.getElementById('addCardBtn');
 const downloadBtn = document.getElementById('downloadBtn');
@@ -32,6 +33,7 @@ const addBatchBtn = document.getElementById('addBatchBtn');
 const clearBatchBtn = document.getElementById('clearBatchBtn');
 const ocrImageBtn = document.getElementById('ocrImageBtn');
 const saveKeyBtn = document.getElementById('saveKeyBtn');
+const parseNoteBtn = document.getElementById('parseNoteBtn');
 
 const now = () => Date.now();
 
@@ -800,6 +802,14 @@ ocrImageBtn.addEventListener('click', () => {
 ocrImageInputEl.addEventListener('change', () => {
   const file = ocrImageInputEl.files && ocrImageInputEl.files[0];
   runOcrFromImage(file).catch((err) => showMessage(err.message || 'OCR import failed.', true));
+});
+parseNoteBtn.addEventListener('click', () => {
+  const noteText = cleanText(noteInputEl.value);
+  if (!noteText) {
+    showMessage('Paste notes text first.', true);
+    return;
+  }
+  applyParsedContent(noteText, 'Notes');
 });
 
 hydrate();
