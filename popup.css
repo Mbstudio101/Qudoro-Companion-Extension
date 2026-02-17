@@ -143,6 +143,53 @@ button.ghost {
   font-weight: 500;
 }
 
+.hidden {
+  display: none;
+}
+
+.correct-answer {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.correct-list {
+  display: grid;
+  gap: 6px;
+}
+
+.correct-item {
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  padding: 7px 8px;
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  background: #fff;
+}
+
+.correct-item input[type='radio'] {
+  margin: 0;
+}
+
+.correct-item .check {
+  font-size: 12px;
+  color: transparent;
+}
+
+.correct-item.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.correct-item.active .check {
+  color: #2563eb;
+}
+
 @media (prefers-color-scheme: dark) {
   body {
     background: #0b1220;
@@ -168,5 +215,23 @@ button.ghost {
 
   .cards li {
     border-color: #334155;
+  }
+
+  .correct-answer {
+    border-color: #334155;
+  }
+
+  .correct-item {
+    border-color: #334155;
+    background: #0b1220;
+  }
+
+  .correct-item.active {
+    border-color: #3b82f6;
+    background: #172554;
+  }
+
+  .correct-item.active .check {
+    color: #93c5fd;
   }
 }

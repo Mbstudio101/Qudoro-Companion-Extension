@@ -27,7 +27,10 @@
       <section class="card section">
         <div class="row between">
           <h2>Add Card</h2>
-          <button id="captureSelectionBtn" class="ghost">Capture Selection</button>
+          <div class="row gap">
+            <button id="captureSelectionBtn" class="ghost">Capture Selection</button>
+            <button id="pasteClipboardBtn" class="ghost">Paste Clipboard</button>
+          </div>
         </div>
 
         <label for="frontText">Front (Question/Prompt)</label>
@@ -43,6 +46,14 @@
 
         <label for="optionsText">Options (one per line, optional)</label>
         <textarea id="optionsText" rows="4" placeholder="A) Option one&#10;B) Option two&#10;C) Option three"></textarea>
+
+        <div id="correctAnswerBlock" class="correct-answer hidden">
+          <div class="row between">
+            <label>Select Correct Answer</label>
+            <span class="hint">Choose one</span>
+          </div>
+          <div id="correctAnswerList" class="correct-list"></div>
+        </div>
 
         <button id="addCardBtn">Add Card</button>
         <p id="addMessage" class="hint"></p>
