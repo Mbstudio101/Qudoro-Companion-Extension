@@ -5,14 +5,14 @@
 
 body {
   margin: 0;
-  width: 430px;
+  width: 390px;
   max-width: 100%;
   background: #eef1ff;
   color: #1e2434;
 }
 
 .app {
-  padding: 12px;
+  padding: 10px;
   display: grid;
   gap: 12px;
 }
@@ -20,18 +20,18 @@ body {
 .card {
   background: rgba(255, 255, 255, 0.78);
   border: 1px solid #d9defe;
-  border-radius: 24px;
+  border-radius: 16px;
   box-shadow: 0 2px 14px rgba(99, 102, 241, 0.08);
 }
 
 .section {
-  padding: 16px;
+  padding: 12px;
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .header {
-  padding: 14px 16px;
+  padding: 10px 12px;
 }
 
 .brand {
@@ -42,7 +42,7 @@ body {
 
 .brand h1 {
   margin: 0;
-  font-size: 26px;
+  font-size: 16px;
   line-height: 1.12;
   letter-spacing: -0.01em;
 }
@@ -91,7 +91,7 @@ body {
 
 h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 14px;
   letter-spacing: 0.06em;
   color: #6c7385;
 }
@@ -106,9 +106,9 @@ textarea {
   width: 100%;
   box-sizing: border-box;
   border: 2px solid #c9cffd;
-  border-radius: 18px;
-  padding: 12px 14px;
-  font-size: 15px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
   background: #fff;
   color: #1f2937;
 }
@@ -122,8 +122,8 @@ button {
   border-radius: 999px;
   background: linear-gradient(135deg, #4f67f6, #6a61f3);
   color: #fff;
-  padding: 12px 16px;
-  font-size: 16px;
+  padding: 10px 12px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -162,19 +162,19 @@ button.ghost {
 
 .option-row {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 140px;
-  gap: 8px;
+  grid-template-columns: 20px minmax(0, 1fr) 98px;
+  gap: 6px;
   align-items: center;
 }
 
 .option-row label {
-  font-size: 18px;
+  font-size: 14px;
   color: #1f2937;
 }
 
 .mark-btn {
-  padding: 10px 12px;
-  font-size: 14px;
+  padding: 8px 9px;
+  font-size: 11px;
   background: #fff;
   color: #1f2937;
   border: 2px solid #c9cffd;
@@ -191,7 +191,7 @@ button.ghost {
   color: #4f67f6;
   background: #e8ebff;
   border-radius: 999px;
-  padding: 4px 12px;
+  padding: 3px 8px;
   font-weight: 700;
 }
 
@@ -216,7 +216,7 @@ button.ghost {
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: 180px;
+  max-height: 120px;
   overflow: auto;
   display: grid;
   gap: 8px;

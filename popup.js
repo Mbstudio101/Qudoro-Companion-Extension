@@ -4,8 +4,6 @@ const state = {
   selectedCorrectIndex: null,
 };
 
-const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
-
 const setTitleEl = document.getElementById('setTitle');
 const setDescriptionEl = document.getElementById('setDescription');
 const noteInputEl = document.getElementById('noteInput');
@@ -17,8 +15,6 @@ const cardCountEl = document.getElementById('cardCount');
 const cardsListEl = document.getElementById('cardsList');
 const batchCountEl = document.getElementById('batchCount');
 const batchListEl = document.getElementById('batchList');
-const openAiKeyEl = document.getElementById('openAiKey');
-const ocrImageInputEl = document.getElementById('ocrImageInput');
 
 const optionEls = [
   document.getElementById('optionA'),
@@ -37,8 +33,6 @@ const captureSelectionBtn = document.getElementById('captureSelectionBtn');
 const pasteClipboardBtn = document.getElementById('pasteClipboardBtn');
 const addBatchBtn = document.getElementById('addBatchBtn');
 const clearBatchBtn = document.getElementById('clearBatchBtn');
-const ocrImageBtn = document.getElementById('ocrImageBtn');
-const saveKeyBtn = document.getElementById('saveKeyBtn');
 
 const now = () => Date.now();
 const uid = () => (crypto && crypto.randomUUID ? crypto.randomUUID() : `q_${now()}_${Math.random().toString(16).slice(2)}`);
@@ -156,11 +150,41 @@ function parseQuestionBlock(raw) {
   if (!text) return { front: '', back: '', options: [], correctIndex: null };
 
   const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
-  const optionPattern = /^(?:[-*•]\s*)?(?:\(?[A-Za-z]\)|[A-Za-z][).]|\d{1,2}[).])\s+(.+)$/;
-  const optionStartIndex = lines.findIndex((line) => optionPattern.test(line));
+  const strictOptionPattern = /^(?:[-*•]\s*)?(?:\(?[A-Za-z]\)|[A-Za-z][).]|\d{1,2}[).])\s+(.+)$/;
+  const looseOptionPattern = /^(?:[-*•]\s*)?(?:\(?[A-Da-d]\)?[).:]?|\d{1,2}[).:])\s*(.+)$/;
+  const getOptionValue = (line) => {
+    const strict = line.match(strictOptionPattern);
+    if (strict) return strict[1].trim();
+    const loose = line.match(looseOptionPattern);
+    if (loose) return loose[1].trim();
+    return '';
+  };
+
+  let optionStartIndex = -1;
+  for (let i = 1; i < lines.length; i += 1) {
+    const first = getOptionValue(lines[i]);
+    const second = i + 1 < lines.length ? getOptionValue(lines[i + 1]) : '';
+    if (first && second) {
+      optionStartIndex = i;
+      break;
+    }
+  }
 
   if (optionStartIndex === -1) {
     if (lines.length === 1) return { front: lines[0], back: '', options: [], correctIndex: null };
+
+    // Fallback: question on first line and short answer choices as remaining lines.
+    const tailLines = lines.slice(1);
+    const shortLineChoices = tailLines.filter((line) => line.length > 0 && line.length <= 120);
+    if (shortLineChoices.length >= 2) {
+      return {
+        front: lines[0],
+        back: '',
+        options: shortLineChoices.slice(0, 6),
+        correctIndex: detectAnswerFromRaw(text, shortLineChoices.slice(0, 6)),
+      };
+    }
+
     return { front: lines[0], back: lines.slice(1).join('\n'), options: [], correctIndex: null };
   }
 
@@ -171,7 +195,7 @@ function parseQuestionBlock(raw) {
 
   for (let i = optionStartIndex; i < lines.length; i += 1) {
     const line = lines[i];
-    if (inOptions && optionPattern.test(line)) {
+    if (inOptions && getOptionValue(line)) {
       optionLines.push(line);
       continue;
     }
@@ -183,7 +207,7 @@ function parseQuestionBlock(raw) {
     trailingLines.push(line);
   }
 
-  const options = optionLines.map((line) => line.replace(optionPattern, '$1').trim()).filter(Boolean);
+  const options = optionLines.map((line) => getOptionValue(line)).filter(Boolean);
   const trailingText = trailingLines.join('\n');
   const directAnswer = detectAnswerFromRaw(trailingText, options);
   const fallbackAnswer = directAnswer !== null ? directAnswer : detectAnswerFromRaw(text, options);
@@ -562,84 +586,12 @@ async function copyExportToClipboard() {
   showMessage('JSON copied to clipboard.');
 }
 
-function fileToDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('Could not read image file.'));
-    reader.readAsDataURL(file);
-  });
-}
-
-function extractOcrText(responseBody) {
-  if (typeof responseBody.output_text === 'string' && cleanText(responseBody.output_text)) {
-    return cleanText(responseBody.output_text);
-  }
-  const outputs = Array.isArray(responseBody.output) ? responseBody.output : [];
-  const textParts = [];
-  outputs.forEach((out) => {
-    const content = Array.isArray(out.content) ? out.content : [];
-    content.forEach((entry) => {
-      if (typeof entry.text === 'string') textParts.push(entry.text);
-    });
-  });
-  return cleanText(textParts.join('\n'));
-}
-
-async function runOcrFromImage(file) {
-  const apiKey = cleanText(openAiKeyEl.value);
-  if (!apiKey) {
-    showMessage('Add your OpenAI API key first.', true);
-    return;
-  }
-  if (!file) {
-    showMessage('Choose an image first.', true);
-    return;
-  }
-
-  const imageDataUrl = await fileToDataUrl(file);
-  showMessage('Running OCR on image...');
-
-  const response = await fetch(OPENAI_RESPONSES_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'gpt-4.1-mini',
-      input: [
-        {
-          role: 'user',
-          content: [
-            { type: 'input_text', text: 'Extract only quiz/study text with line breaks and no explanation.' },
-            { type: 'input_image', image_url: imageDataUrl },
-          ],
-        },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`OCR request failed (${response.status}): ${errText.slice(0, 180)}`);
-  }
-
-  const data = await response.json();
-  const extracted = extractOcrText(data);
-  if (!extracted) throw new Error('OCR returned no text. Try a clearer image.');
-
-  noteInputEl.value = extracted;
-  applyParsedContent(extracted, 'OCR image');
-}
-
 function persist() {
   chrome.storage.local.set({
     qudoroCompanion: {
       setTitle: setTitleEl.value,
       setDescription: setDescriptionEl.value,
       cards: state.cards,
-      openAiKey: openAiKeyEl.value,
       forceAddDuplicates: Boolean(forceAddDuplicatesEl.checked),
     },
   });
@@ -651,7 +603,6 @@ function hydrate() {
     if (!data) return;
     setTitleEl.value = data.setTitle || '';
     setDescriptionEl.value = data.setDescription || '';
-    openAiKeyEl.value = data.openAiKey || '';
     forceAddDuplicatesEl.checked = Boolean(data.forceAddDuplicates);
     state.cards = Array.isArray(data.cards) ? data.cards : [];
     renderCards();
@@ -661,7 +612,6 @@ function hydrate() {
 
 setTitleEl.addEventListener('input', persist);
 setDescriptionEl.addEventListener('input', persist);
-openAiKeyEl.addEventListener('change', persist);
 forceAddDuplicatesEl.addEventListener('change', persist);
 
 markButtons.forEach((btn) => {
@@ -709,18 +659,6 @@ captureSelectionBtn.addEventListener('click', () => {
 });
 pasteClipboardBtn.addEventListener('click', () => {
   fillFromClipboard().catch(() => showMessage('Clipboard read failed.', true));
-});
-ocrImageBtn.addEventListener('click', () => {
-  ocrImageInputEl.value = '';
-  ocrImageInputEl.click();
-});
-ocrImageInputEl.addEventListener('change', () => {
-  const file = ocrImageInputEl.files && ocrImageInputEl.files[0];
-  runOcrFromImage(file).catch((err) => showMessage(err.message || 'OCR import failed.', true));
-});
-saveKeyBtn.addEventListener('click', () => {
-  persist();
-  showMessage('API key saved locally in this extension.');
 });
 
 hydrate();
