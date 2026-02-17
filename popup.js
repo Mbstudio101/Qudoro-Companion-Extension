@@ -1,30 +1,36 @@
 const state = {
   cards: [],
-  selectedCorrectIndex: null,
   batchQueue: [],
+  selectedCorrectIndex: null,
 };
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
 
 const setTitleEl = document.getElementById('setTitle');
 const setDescriptionEl = document.getElementById('setDescription');
+const noteInputEl = document.getElementById('noteInput');
 const frontTextEl = document.getElementById('frontText');
 const backTextEl = document.getElementById('backText');
-const optionsTextEl = document.getElementById('optionsText');
-const isMultipleChoiceEl = document.getElementById('isMultipleChoice');
+const forceAddDuplicatesEl = document.getElementById('forceAddDuplicates');
 const addMessageEl = document.getElementById('addMessage');
 const cardCountEl = document.getElementById('cardCount');
 const cardsListEl = document.getElementById('cardsList');
-const correctAnswerBlockEl = document.getElementById('correctAnswerBlock');
-const correctAnswerListEl = document.getElementById('correctAnswerList');
 const batchCountEl = document.getElementById('batchCount');
 const batchListEl = document.getElementById('batchList');
 const openAiKeyEl = document.getElementById('openAiKey');
 const ocrImageInputEl = document.getElementById('ocrImageInput');
-const forceAddDuplicatesEl = document.getElementById('forceAddDuplicates');
-const noteInputEl = document.getElementById('noteInput');
+
+const optionEls = [
+  document.getElementById('optionA'),
+  document.getElementById('optionB'),
+  document.getElementById('optionC'),
+  document.getElementById('optionD'),
+];
+
+const markButtons = Array.from(document.querySelectorAll('.mark-btn'));
 
 const addCardBtn = document.getElementById('addCardBtn');
+const parseNoteBtn = document.getElementById('parseNoteBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const copyBtn = document.getElementById('copyBtn');
 const captureSelectionBtn = document.getElementById('captureSelectionBtn');
@@ -33,23 +39,16 @@ const addBatchBtn = document.getElementById('addBatchBtn');
 const clearBatchBtn = document.getElementById('clearBatchBtn');
 const ocrImageBtn = document.getElementById('ocrImageBtn');
 const saveKeyBtn = document.getElementById('saveKeyBtn');
-const parseNoteBtn = document.getElementById('parseNoteBtn');
 
 const now = () => Date.now();
-
-const uid = () =>
-  (crypto && crypto.randomUUID ? crypto.randomUUID() : `q_${now()}_${Math.random().toString(16).slice(2)}`);
+const uid = () => (crypto && crypto.randomUUID ? crypto.randomUUID() : `q_${now()}_${Math.random().toString(16).slice(2)}`);
 
 function cleanText(value) {
   return (value || '').replace(/\r\n/g, '\n').trim();
 }
 
 function normalizeQuestion(value) {
-  return cleanText(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return cleanText(value).toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function buildBigrams(value) {
@@ -63,12 +62,10 @@ function buildBigrams(value) {
 function diceCoefficient(a, b) {
   if (!a || !b) return 0;
   if (a === b) return 1;
-
   const aBigrams = buildBigrams(a);
   const bBigrams = buildBigrams(b);
   const counts = new Map();
   aBigrams.forEach((gram) => counts.set(gram, (counts.get(gram) || 0) + 1));
-
   let overlap = 0;
   bBigrams.forEach((gram) => {
     const count = counts.get(gram) || 0;
@@ -77,59 +74,60 @@ function diceCoefficient(a, b) {
       counts.set(gram, count - 1);
     }
   });
-
   return (2 * overlap) / (aBigrams.length + bBigrams.length);
 }
 
 function findDuplicateCard(front) {
   const normalized = normalizeQuestion(front);
   if (!normalized) return null;
-
   for (const card of state.cards) {
     const cardNorm = normalizeQuestion(card.content);
     if (!cardNorm) continue;
     if (cardNorm === normalized) return card;
-
     const lengthDiff = Math.abs(cardNorm.length - normalized.length);
     const allowedDiff = Math.max(8, Math.round(normalized.length * 0.25));
     if (lengthDiff <= allowedDiff && diceCoefficient(cardNorm, normalized) >= 0.9) return card;
   }
-
   return null;
 }
 
-function parseOptions(raw) {
-  return cleanText(raw)
-    .split('\n')
-    .map((line) => line.replace(/^\s*(?:[-*•]\s*)?(?:\(?[A-Za-z0-9]\)?[).:\-]?\s*)?/, '').trim())
-    .filter(Boolean);
+function getEditorOptions() {
+  return optionEls.map((el) => cleanText(el.value)).filter(Boolean);
+}
+
+function setEditorOptions(options) {
+  optionEls.forEach((el, idx) => {
+    el.value = options[idx] || '';
+  });
+}
+
+function updateCorrectButtons() {
+  markButtons.forEach((btn) => {
+    const idx = Number(btn.dataset.index);
+    const active = idx === state.selectedCorrectIndex;
+    btn.classList.toggle('active', active);
+    btn.textContent = active ? '✓ Correct' : 'Mark correct';
+  });
 }
 
 function parseAnswerTokenToIndex(token, options) {
   const normalized = String(token || '').trim().toLowerCase();
   if (!normalized || options.length === 0) return null;
-
   if (/^[a-z]$/.test(normalized)) {
     const idx = normalized.charCodeAt(0) - 'a'.charCodeAt(0);
     if (idx >= 0 && idx < options.length) return idx;
   }
-
   if (/^\d+$/.test(normalized)) {
     const idx = parseInt(normalized, 10) - 1;
     if (idx >= 0 && idx < options.length) return idx;
   }
-
   const compact = normalized.replace(/[\W_]+/g, '');
   const idx = options.findIndex((opt) => opt.toLowerCase().replace(/[\W_]+/g, '') === compact);
   return idx >= 0 ? idx : null;
 }
 
 function detectAnswerFromRaw(raw, options) {
-  const lines = cleanText(raw)
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-
+  const lines = cleanText(raw).split('\n').map((line) => line.trim()).filter(Boolean);
   for (const line of lines) {
     const markedOption = line.match(/^(?:[-*•]\s*)?(?:\(?([A-Za-z0-9]{1,2})\)?[).:\-]?\s+)(.+)\s*(?:\(correct\)|\*|✔)$/i);
     if (markedOption) {
@@ -150,7 +148,6 @@ function detectAnswerFromRaw(raw, options) {
     const idx = parseAnswerTokenToIndex(token, options);
     if (idx !== null) return idx;
   }
-
   return null;
 }
 
@@ -158,60 +155,44 @@ function parseQuestionBlock(raw) {
   const text = cleanText(raw);
   if (!text) return { front: '', back: '', options: [], correctIndex: null };
 
-  const lines = text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
   const optionPattern = /^(?:[-*•]\s*)?(?:\(?[A-Za-z]\)|[A-Za-z][).]|\d{1,2}[).])\s+(.+)$/;
   const optionStartIndex = lines.findIndex((line) => optionPattern.test(line));
 
   if (optionStartIndex === -1) {
     if (lines.length === 1) return { front: lines[0], back: '', options: [], correctIndex: null };
-    return {
-      front: lines[0],
-      back: lines.slice(1).join('\n'),
-      options: [],
-      correctIndex: null,
-    };
+    return { front: lines[0], back: lines.slice(1).join('\n'), options: [], correctIndex: null };
   }
 
   const frontLines = lines.slice(0, optionStartIndex);
   const optionLines = [];
   const trailingLines = [];
-
   let inOptions = true;
+
   for (let i = optionStartIndex; i < lines.length; i += 1) {
     const line = lines[i];
     if (inOptions && optionPattern.test(line)) {
       optionLines.push(line);
       continue;
     }
-
     if (inOptions && optionLines.length > 0 && !/^(?:answer|ans|correct)\s*[:\-]?/i.test(line)) {
       optionLines[optionLines.length - 1] = `${optionLines[optionLines.length - 1]} ${line}`.trim();
       continue;
     }
-
     inOptions = false;
     trailingLines.push(line);
   }
 
-  const options = optionLines
-    .map((line) => line.replace(optionPattern, '$1').trim())
-    .filter(Boolean);
-
+  const options = optionLines.map((line) => line.replace(optionPattern, '$1').trim()).filter(Boolean);
   const trailingText = trailingLines.join('\n');
   const directAnswer = detectAnswerFromRaw(trailingText, options);
   const fallbackAnswer = directAnswer !== null ? directAnswer : detectAnswerFromRaw(text, options);
-
-  const frontText = frontLines.join(' ').replace(/^(?:q(?:uestion)?\s*[:.)\-]\s*)/i, '').trim();
   const backMatch = trailingText.match(/(?:^|\n)\s*(?:answer|ans|correct)\s*[:\-]?\s*(.+)$/i);
-  const back = backMatch ? cleanText(backMatch[1]) : '';
+  const frontText = frontLines.join(' ').replace(/^(?:q(?:uestion)?\s*[:.)\-]\s*)/i, '').trim();
 
   return {
     front: frontText || lines[0],
-    back,
+    back: backMatch ? cleanText(backMatch[1]) : '',
     options,
     correctIndex: fallbackAnswer,
   };
@@ -231,7 +212,6 @@ function scoreConfidence(parsed) {
 function splitIntoBlocks(raw) {
   const text = cleanText(raw);
   if (!text) return [];
-
   const byBlankLines = text.split(/\n\s*\n+/).map(cleanText).filter(Boolean);
   if (byBlankLines.length > 1) return byBlankLines;
 
@@ -241,7 +221,6 @@ function splitIntoBlocks(raw) {
     const line = lines[i].trim();
     if (/^(?:q(?:uestion)?\s*)?\d{1,3}[).:\-]\s+\S+/i.test(line)) starts.push(i);
   }
-
   if (starts.length < 2) return [text];
 
   const blocks = [];
@@ -257,19 +236,12 @@ function splitIntoBlocks(raw) {
 function parseBatchInput(raw) {
   const blocks = splitIntoBlocks(raw);
   const seen = new Set();
-
   return blocks
     .map((block) => {
       const parsed = parseQuestionBlock(block);
       const confidence = scoreConfidence(parsed);
       const signature = normalizeQuestion(parsed.front || block);
-      return {
-        id: uid(),
-        parsed,
-        confidence,
-        isLowConfidence: confidence < 0.55,
-        signature,
-      };
+      return { id: uid(), parsed, confidence, isLowConfidence: confidence < 0.55, signature };
     })
     .filter((item) => item.parsed.front || item.parsed.options.length || item.parsed.back)
     .filter((item) => {
@@ -280,49 +252,52 @@ function parseBatchInput(raw) {
     });
 }
 
-function renderCorrectAnswerPicker() {
-  const options = parseOptions(optionsTextEl.value);
-  const isMc = Boolean(isMultipleChoiceEl.checked && options.length >= 2);
+function showMessage(message, isError = false) {
+  addMessageEl.textContent = message;
+  addMessageEl.style.color = isError ? '#dc2626' : '#16a34a';
+  setTimeout(() => {
+    if (addMessageEl.textContent === message) addMessageEl.textContent = '';
+  }, 2800);
+}
 
-  if (!isMc) {
-    correctAnswerBlockEl.classList.add('hidden');
-    correctAnswerListEl.innerHTML = '';
-    state.selectedCorrectIndex = null;
-    return;
-  }
+function buildCard(front, back, options, correctIndex) {
+  const isMc = options.length >= 2;
+  if (!front) return null;
+  if (!isMc && !back) return null;
+  if (isMc && (correctIndex === null || correctIndex < 0 || correctIndex >= options.length)) return null;
+  const answerText = isMc ? options[correctIndex] : back;
+  return {
+    id: uid(),
+    content: front,
+    rationale: back || answerText,
+    answer: [answerText],
+    options: isMc ? options : [],
+    tags: ['extension-import'],
+    domain: 'General',
+    questionStyle: isMc ? 'Multiple Choice' : 'Flashcard',
+    createdAt: now(),
+    box: 1,
+    nextReviewDate: now(),
+    easeFactor: 2.5,
+    repetitions: 0,
+    interval: 0,
+  };
+}
 
-  if (state.selectedCorrectIndex === null || state.selectedCorrectIndex >= options.length) {
-    state.selectedCorrectIndex = null;
-  }
+function clearEditor() {
+  frontTextEl.value = '';
+  backTextEl.value = '';
+  setEditorOptions([]);
+  state.selectedCorrectIndex = null;
+  updateCorrectButtons();
+}
 
-  correctAnswerBlockEl.classList.remove('hidden');
-  correctAnswerListEl.innerHTML = '';
-
-  options.forEach((option, index) => {
-    const item = document.createElement('label');
-    item.className = `correct-item${state.selectedCorrectIndex === index ? ' active' : ''}`;
-
-    const radio = document.createElement('input');
-    radio.type = 'radio';
-    radio.name = 'correctAnswer';
-    radio.checked = state.selectedCorrectIndex === index;
-    radio.addEventListener('change', () => {
-      state.selectedCorrectIndex = index;
-      renderCorrectAnswerPicker();
-    });
-
-    const text = document.createElement('span');
-    text.textContent = `${index + 1}. ${option}`;
-
-    const check = document.createElement('span');
-    check.className = 'check';
-    check.textContent = '✓';
-
-    item.appendChild(radio);
-    item.appendChild(text);
-    item.appendChild(check);
-    correctAnswerListEl.appendChild(item);
-  });
+function loadParsedIntoEditor(parsed) {
+  frontTextEl.value = parsed.front;
+  backTextEl.value = parsed.back;
+  setEditorOptions(parsed.options.slice(0, 4));
+  state.selectedCorrectIndex = parsed.correctIndex !== null && parsed.correctIndex < 4 ? parsed.correctIndex : null;
+  updateCorrectButtons();
 }
 
 function renderCards() {
@@ -331,24 +306,58 @@ function renderCards() {
 
   state.cards.forEach((card, idx) => {
     const li = document.createElement('li');
-    const span = document.createElement('span');
-    span.className = 'title';
-    span.textContent = `${idx + 1}. ${card.content}`;
+    const top = document.createElement('div');
+    top.className = 'card-item-top';
 
-    const delBtn = document.createElement('button');
-    delBtn.className = 'delete';
-    delBtn.textContent = 'Remove';
-    delBtn.addEventListener('click', () => {
+    const title = document.createElement('span');
+    title.textContent = `${idx + 1}. ${card.content}`;
+
+    const actions = document.createElement('div');
+    actions.className = 'small-actions';
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'ghost';
+    removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', () => {
       state.cards.splice(idx, 1);
       persist();
       renderCards();
       renderBatchQueue();
     });
 
-    li.appendChild(span);
-    li.appendChild(delBtn);
+    actions.appendChild(removeBtn);
+    top.appendChild(title);
+    top.appendChild(actions);
+    li.appendChild(top);
     cardsListEl.appendChild(li);
   });
+}
+
+function addSingleBatchItem(itemId) {
+  const item = state.batchQueue.find((entry) => entry.id === itemId);
+  if (!item) return;
+
+  const duplicateCard = !forceAddDuplicatesEl.checked ? findDuplicateCard(item.parsed.front) : null;
+  if (duplicateCard) {
+    showMessage('Duplicate blocked: batch question already exists.', true);
+    state.batchQueue = state.batchQueue.filter((entry) => entry.id !== itemId);
+    renderBatchQueue();
+    return;
+  }
+
+  const card = buildCard(item.parsed.front, item.parsed.back, item.parsed.options, item.parsed.correctIndex);
+  if (!card) {
+    loadParsedIntoEditor(item.parsed);
+    showMessage('Review this item and mark correct answer.', true);
+    return;
+  }
+
+  state.cards.push(card);
+  state.batchQueue = state.batchQueue.filter((entry) => entry.id !== itemId);
+  persist();
+  renderCards();
+  renderBatchQueue();
+  showMessage('Batch item added.');
 }
 
 function renderBatchQueue() {
@@ -357,33 +366,22 @@ function renderBatchQueue() {
 
   state.batchQueue.forEach((item, index) => {
     const duplicateCard = findDuplicateCard(item.parsed.front);
-
     const li = document.createElement('li');
-    li.className = 'batch-item';
+    const top = document.createElement('div');
+    top.className = 'batch-item-top';
 
-    const head = document.createElement('div');
-    head.className = 'batch-head';
-
-    const question = document.createElement('div');
-    question.className = 'batch-question';
-    question.textContent = `${index + 1}. ${item.parsed.front || '(Missing question)'}`;
+    const title = document.createElement('span');
+    title.textContent = `${index + 1}. ${item.parsed.front || '(Missing question)'}`;
 
     const badge = document.createElement('span');
     badge.className = `badge ${(item.isLowConfidence || duplicateCard) ? 'badge-low' : 'badge-high'}`;
-    const badgeStatus = duplicateCard ? 'Duplicate' : (item.isLowConfidence ? 'Low' : 'High');
-    badge.textContent = `${badgeStatus} ${(item.confidence * 100).toFixed(0)}%`;
+    badge.textContent = duplicateCard ? 'Duplicate' : (item.isLowConfidence ? 'Low' : 'High');
 
-    head.appendChild(question);
-    head.appendChild(badge);
-
-    const meta = document.createElement('div');
-    meta.className = 'batch-meta';
-    const duplicateText = duplicateCard ? ' • duplicate in cards list' : '';
-    const answerText = item.parsed.correctIndex !== null ? ' • answer detected' : '';
-    meta.textContent = `${item.parsed.options.length} option(s)${answerText}${duplicateText}`;
+    top.appendChild(title);
+    top.appendChild(badge);
 
     const actions = document.createElement('div');
-    actions.className = 'batch-actions';
+    actions.className = 'small-actions';
 
     const useBtn = document.createElement('button');
     useBtn.className = 'ghost';
@@ -406,68 +404,26 @@ function renderBatchQueue() {
     actions.appendChild(addBtn);
     actions.appendChild(removeBtn);
 
-    li.appendChild(head);
-    li.appendChild(meta);
+    li.appendChild(top);
     li.appendChild(actions);
     batchListEl.appendChild(li);
   });
 }
 
-function showMessage(message, isError = false) {
-  addMessageEl.textContent = message;
-  addMessageEl.style.color = isError ? '#dc2626' : '#16a34a';
-  setTimeout(() => {
-    if (addMessageEl.textContent === message) addMessageEl.textContent = '';
-  }, 3200);
-}
-
-function currentSetMeta() {
-  const title = cleanText(setTitleEl.value) || 'Imported Browser Set';
-  const description = cleanText(setDescriptionEl.value) || 'Generated by Qudoro Companion extension';
-  return { title, description };
-}
-
-function buildCard(front, back, options, correctIndex) {
-  const isMc = options.length >= 2;
-  if (!front) return null;
-  if (!isMc && !back) return null;
-  if (isMc && (correctIndex === null || correctIndex < 0 || correctIndex >= options.length)) return null;
-
-  const answerText = isMc ? options[correctIndex] : back;
-
-  return {
-    id: uid(),
-    content: front,
-    rationale: back || answerText,
-    answer: [answerText],
-    options: isMc ? options : [],
-    tags: ['extension-import'],
-    domain: 'General',
-    questionStyle: isMc ? 'Multiple Choice' : 'Flashcard',
-    createdAt: now(),
-    box: 1,
-    nextReviewDate: now(),
-    easeFactor: 2.5,
-    repetitions: 0,
-    interval: 0,
-  };
-}
-
 function createCardFromInputs() {
   const front = cleanText(frontTextEl.value);
   const back = cleanText(backTextEl.value);
-  const options = parseOptions(optionsTextEl.value);
-  const isMc = Boolean(isMultipleChoiceEl.checked && options.length >= 2);
+  const options = getEditorOptions();
 
   const duplicateCard = !forceAddDuplicatesEl.checked ? findDuplicateCard(front) : null;
   if (duplicateCard) {
-    showMessage('Duplicate blocked: this question already exists in your cards list.', true);
+    showMessage('Duplicate blocked: this question already exists.', true);
     return;
   }
 
-  const card = buildCard(front, back, isMc ? options : [], isMc ? state.selectedCorrectIndex : null);
+  const card = buildCard(front, back, options, options.length >= 2 ? state.selectedCorrectIndex : null);
   if (!card) {
-    showMessage('Review this card: missing question, answer, or correct option.', true);
+    showMessage('Missing question, answer, or correct option.', true);
     return;
   }
 
@@ -475,68 +431,13 @@ function createCardFromInputs() {
   persist();
   renderCards();
   renderBatchQueue();
-  showMessage('Card added.');
-
-  frontTextEl.value = '';
-  backTextEl.value = '';
-  optionsTextEl.value = '';
-  isMultipleChoiceEl.checked = false;
-  state.selectedCorrectIndex = null;
-  renderCorrectAnswerPicker();
-}
-
-function loadParsedIntoEditor(parsed) {
-  frontTextEl.value = parsed.front;
-  backTextEl.value = parsed.back;
-  optionsTextEl.value = '';
-  isMultipleChoiceEl.checked = false;
-  state.selectedCorrectIndex = null;
-
-  if (parsed.options.length >= 2) {
-    optionsTextEl.value = parsed.options.join('\n');
-    isMultipleChoiceEl.checked = true;
-    state.selectedCorrectIndex = parsed.correctIndex;
-  }
-
-  renderCorrectAnswerPicker();
-}
-
-function addSingleBatchItem(itemId) {
-  const item = state.batchQueue.find((entry) => entry.id === itemId);
-  if (!item) return;
-
-  const duplicateCard = !forceAddDuplicatesEl.checked ? findDuplicateCard(item.parsed.front) : null;
-  if (duplicateCard) {
-    showMessage('Duplicate blocked: this batch question is already in your cards list.', true);
-    state.batchQueue = state.batchQueue.filter((entry) => entry.id !== itemId);
-    renderBatchQueue();
-    return;
-  }
-
-  const card = buildCard(item.parsed.front, item.parsed.back, item.parsed.options, item.parsed.correctIndex);
-  if (!card) {
-    loadParsedIntoEditor(item.parsed);
-    showMessage('Could not auto-add this item. Review and choose the correct option.', true);
-    return;
-  }
-
-  state.cards.push(card);
-  state.batchQueue = state.batchQueue.filter((entry) => entry.id !== itemId);
-  persist();
-  renderCards();
-  renderBatchQueue();
-  showMessage('Batch item added.');
+  clearEditor();
+  showMessage('Added to snapshot list.');
 }
 
 function addAllHighConfidence() {
   if (!state.batchQueue.length) {
     showMessage('Batch queue is empty.', true);
-    return;
-  }
-
-  const highConfidence = state.batchQueue.filter((item) => !item.isLowConfidence);
-  if (!highConfidence.length) {
-    showMessage('No high-confidence items to auto-add.', true);
     return;
   }
 
@@ -569,23 +470,71 @@ function addAllHighConfidence() {
   persist();
   renderCards();
   renderBatchQueue();
-  showMessage(`Added ${added} card(s). Skipped ${skippedDuplicates} duplicate(s). ${remaining.length} need review.`);
+  showMessage(`Added ${added}, skipped ${skippedDuplicates}, ${remaining.length} need review.`);
+}
+
+function applyParsedContent(raw, sourceLabel) {
+  const parsedItems = parseBatchInput(raw);
+  if (!parsedItems.length) {
+    showMessage(`No usable text found from ${sourceLabel}.`, true);
+    return;
+  }
+
+  if (parsedItems.length === 1) {
+    loadParsedIntoEditor(parsedItems[0].parsed);
+    showMessage(`${sourceLabel} parsed.`);
+    return;
+  }
+
+  state.batchQueue = [...state.batchQueue, ...parsedItems];
+  renderBatchQueue();
+  loadParsedIntoEditor(parsedItems[0].parsed);
+  const lowCount = parsedItems.filter((item) => item.isLowConfidence).length;
+  showMessage(`${sourceLabel}: ${parsedItems.length} items parsed (${lowCount} low confidence).`, lowCount > 0);
+}
+
+async function captureFromSelection() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab || tab.id === undefined) {
+    showMessage('No active tab found.', true);
+    return;
+  }
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => window.getSelection()?.toString() || '',
+  });
+  const text = cleanText(result || '');
+  noteInputEl.value = text;
+  applyParsedContent(text, 'Selection');
+}
+
+async function fillFromClipboard() {
+  const text = cleanText(await navigator.clipboard.readText());
+  noteInputEl.value = text;
+  applyParsedContent(text, 'Clipboard');
+}
+
+function currentSetMeta() {
+  return {
+    title: cleanText(setTitleEl.value) || 'Imported Browser Set',
+    description: cleanText(setDescriptionEl.value) || 'Generated by Qudoro Companion extension',
+  };
 }
 
 function buildQudoroExport() {
   const { title, description } = currentSetMeta();
   const setId = uid();
-  const questionIds = state.cards.map((c) => c.id);
-  const set = {
-    id: setId,
-    title,
-    description,
-    questionIds,
-    createdAt: now(),
-  };
   return {
     questions: state.cards,
-    sets: [set],
+    sets: [
+      {
+        id: setId,
+        title,
+        description,
+        questionIds: state.cards.map((c) => c.id),
+        createdAt: now(),
+      },
+    ],
   };
 }
 
@@ -594,11 +543,9 @@ function downloadExport() {
     showMessage('Add at least one card before export.', true);
     return;
   }
-
   const payload = JSON.stringify(buildQudoroExport(), null, 2);
   const blob = new Blob([payload], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
-
   const a = document.createElement('a');
   a.href = url;
   a.download = `qudoro-extension-export-${new Date().toISOString().slice(0, 10)}.json`;
@@ -611,51 +558,8 @@ async function copyExportToClipboard() {
     showMessage('Add at least one card before copy.', true);
     return;
   }
-  const payload = JSON.stringify(buildQudoroExport(), null, 2);
-  await navigator.clipboard.writeText(payload);
+  await navigator.clipboard.writeText(JSON.stringify(buildQudoroExport(), null, 2));
   showMessage('JSON copied to clipboard.');
-}
-
-function applyParsedContent(raw, sourceLabel) {
-  const parsedItems = parseBatchInput(raw);
-  if (!parsedItems.length) {
-    showMessage(`No usable text found from ${sourceLabel}.`, true);
-    return;
-  }
-
-  if (parsedItems.length === 1) {
-    loadParsedIntoEditor(parsedItems[0].parsed);
-    const isLow = parsedItems[0].isLowConfidence;
-    showMessage(`${sourceLabel} parsed${isLow ? ' (low confidence, please review).' : '.'}`, isLow);
-    return;
-  }
-
-  state.batchQueue = [...state.batchQueue, ...parsedItems];
-  renderBatchQueue();
-  loadParsedIntoEditor(parsedItems[0].parsed);
-
-  const lowCount = parsedItems.filter((item) => item.isLowConfidence).length;
-  showMessage(`${sourceLabel} parsed ${parsedItems.length} items. ${lowCount} low-confidence.`, lowCount > 0);
-}
-
-async function captureFromSelection() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab || tab.id === undefined) {
-    showMessage('No active tab found.', true);
-    return;
-  }
-
-  const [{ result }] = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    func: () => window.getSelection()?.toString() || '',
-  });
-
-  applyParsedContent(result || '', 'Selection');
-}
-
-async function fillFromClipboard() {
-  const text = await navigator.clipboard.readText();
-  applyParsedContent(text, 'Clipboard');
 }
 
 function fileToDataUrl(file) {
@@ -671,7 +575,6 @@ function extractOcrText(responseBody) {
   if (typeof responseBody.output_text === 'string' && cleanText(responseBody.output_text)) {
     return cleanText(responseBody.output_text);
   }
-
   const outputs = Array.isArray(responseBody.output) ? responseBody.output : [];
   const textParts = [];
   outputs.forEach((out) => {
@@ -680,14 +583,13 @@ function extractOcrText(responseBody) {
       if (typeof entry.text === 'string') textParts.push(entry.text);
     });
   });
-
   return cleanText(textParts.join('\n'));
 }
 
 async function runOcrFromImage(file) {
   const apiKey = cleanText(openAiKeyEl.value);
   if (!apiKey) {
-    showMessage('Add your OpenAI API key first for OCR import.', true);
+    showMessage('Add your OpenAI API key first.', true);
     return;
   }
   if (!file) {
@@ -710,14 +612,8 @@ async function runOcrFromImage(file) {
         {
           role: 'user',
           content: [
-            {
-              type: 'input_text',
-              text: 'Extract only the quiz/study text from this image with line breaks preserved. Do not explain.',
-            },
-            {
-              type: 'input_image',
-              image_url: imageDataUrl,
-            },
+            { type: 'input_text', text: 'Extract only quiz/study text with line breaks and no explanation.' },
+            { type: 'input_image', image_url: imageDataUrl },
           ],
         },
       ],
@@ -731,22 +627,22 @@ async function runOcrFromImage(file) {
 
   const data = await response.json();
   const extracted = extractOcrText(data);
-  if (!extracted) {
-    throw new Error('OCR returned no text. Try a clearer image.');
-  }
+  if (!extracted) throw new Error('OCR returned no text. Try a clearer image.');
 
+  noteInputEl.value = extracted;
   applyParsedContent(extracted, 'OCR image');
 }
 
 function persist() {
-  const payload = {
-    setTitle: setTitleEl.value,
-    setDescription: setDescriptionEl.value,
-    cards: state.cards,
-    openAiKey: openAiKeyEl.value,
-    forceAddDuplicates: Boolean(forceAddDuplicatesEl.checked),
-  };
-  chrome.storage.local.set({ qudoroCompanion: payload });
+  chrome.storage.local.set({
+    qudoroCompanion: {
+      setTitle: setTitleEl.value,
+      setDescription: setDescriptionEl.value,
+      cards: state.cards,
+      openAiKey: openAiKeyEl.value,
+      forceAddDuplicates: Boolean(forceAddDuplicatesEl.checked),
+    },
+  });
 }
 
 function hydrate() {
@@ -767,19 +663,38 @@ setTitleEl.addEventListener('input', persist);
 setDescriptionEl.addEventListener('input', persist);
 openAiKeyEl.addEventListener('change', persist);
 forceAddDuplicatesEl.addEventListener('change', persist);
-saveKeyBtn.addEventListener('click', () => {
-  persist();
-  showMessage('API key saved locally in this extension.');
+
+markButtons.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const idx = Number(btn.dataset.index);
+    const optionValue = cleanText(optionEls[idx].value);
+    if (!optionValue) {
+      showMessage('Type this option first, then mark it correct.', true);
+      return;
+    }
+    state.selectedCorrectIndex = idx;
+    updateCorrectButtons();
+  });
 });
-optionsTextEl.addEventListener('input', () => {
-  if (state.selectedCorrectIndex !== null) {
-    const options = parseOptions(optionsTextEl.value);
-    if (state.selectedCorrectIndex >= options.length) state.selectedCorrectIndex = null;
-  }
-  renderCorrectAnswerPicker();
+
+optionEls.forEach((el, idx) => {
+  el.addEventListener('input', () => {
+    if (state.selectedCorrectIndex === idx && !cleanText(el.value)) {
+      state.selectedCorrectIndex = null;
+      updateCorrectButtons();
+    }
+  });
 });
-isMultipleChoiceEl.addEventListener('change', renderCorrectAnswerPicker);
+
 addCardBtn.addEventListener('click', createCardFromInputs);
+parseNoteBtn.addEventListener('click', () => {
+  const noteText = cleanText(noteInputEl.value);
+  if (!noteText) {
+    showMessage('Paste notes text first.', true);
+    return;
+  }
+  applyParsedContent(noteText, 'Notes');
+});
 addBatchBtn.addEventListener('click', addAllHighConfidence);
 clearBatchBtn.addEventListener('click', () => {
   state.batchQueue = [];
@@ -793,7 +708,7 @@ captureSelectionBtn.addEventListener('click', () => {
   captureFromSelection().catch(() => showMessage('Selection capture failed.', true));
 });
 pasteClipboardBtn.addEventListener('click', () => {
-  fillFromClipboard().catch(() => showMessage('Clipboard read failed. Allow clipboard permission and try again.', true));
+  fillFromClipboard().catch(() => showMessage('Clipboard read failed.', true));
 });
 ocrImageBtn.addEventListener('click', () => {
   ocrImageInputEl.value = '';
@@ -803,16 +718,12 @@ ocrImageInputEl.addEventListener('change', () => {
   const file = ocrImageInputEl.files && ocrImageInputEl.files[0];
   runOcrFromImage(file).catch((err) => showMessage(err.message || 'OCR import failed.', true));
 });
-parseNoteBtn.addEventListener('click', () => {
-  const noteText = cleanText(noteInputEl.value);
-  if (!noteText) {
-    showMessage('Paste notes text first.', true);
-    return;
-  }
-  applyParsedContent(noteText, 'Notes');
+saveKeyBtn.addEventListener('click', () => {
+  persist();
+  showMessage('API key saved locally in this extension.');
 });
 
 hydrate();
 renderCards();
 renderBatchQueue();
-renderCorrectAnswerPicker();
+updateCorrectButtons();

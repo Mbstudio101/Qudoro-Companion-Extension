@@ -8,73 +8,87 @@
   </head>
   <body>
     <main class="app">
-      <header class="header">
+      <header class="header card">
         <div class="brand">
           <img src="./icons/icon48.png" alt="Qudoro logo" class="brand-logo" />
-          <h1>Qudoro Companion</h1>
+          <h1>Highlight -> Snap -> Save questions into your app.</h1>
         </div>
-        <p>Build a set from web content and export for Qudoro import.</p>
       </header>
 
-      <section class="card section">
-        <label for="setTitle">Set Title</label>
-        <input id="setTitle" type="text" placeholder="Biology Chapter 3" />
-
-        <label for="setDescription">Set Description</label>
-        <textarea id="setDescription" rows="2" placeholder="Quick review set"></textarea>
+      <section class="status-row">
+        <div class="status-chip">
+          <span>Button</span>
+          <strong><i class="dot"></i> Showing</strong>
+        </div>
+        <div class="status-chip">
+          <span>Snap Mode</span>
+          <strong><i class="dot"></i> Selection</strong>
+        </div>
+        <div class="status-chip">
+          <span>Clipboard</span>
+          <strong><i class="dot"></i> Enabled</strong>
+        </div>
       </section>
 
       <section class="card section">
-        <h2>Paste Notes</h2>
-        <label for="noteInput">Notes Text</label>
-        <textarea id="noteInput" rows="5" placeholder="Paste questions and answer choices here..."></textarea>
-        <button id="parseNoteBtn">Parse Notes Into Cards</button>
-        <p class="hint">The extension will detect question blocks and sort choices automatically.</p>
+        <h2>1 - CAPTURE TEXT</h2>
+        <div class="row gap">
+          <button id="captureSelectionBtn" class="pill primary">🔎 Use Highlighted Text</button>
+          <button id="pasteClipboardBtn" class="pill">📋 Paste Clipboard</button>
+        </div>
+
+        <textarea
+          id="noteInput"
+          rows="4"
+          placeholder="Highlight a full question on the page, then click 'Use Highlighted Text' or paste text here."
+        ></textarea>
+
+        <button id="parseNoteBtn" class="full ghost">✨ Parse into Question + Answers</button>
       </section>
 
       <section class="card section">
         <div class="row between">
-          <h2>Add Card</h2>
-          <div class="row gap">
-            <button id="captureSelectionBtn" class="ghost">Capture Selection</button>
-            <button id="pasteClipboardBtn" class="ghost">Paste Clipboard</button>
-          </div>
+          <h2>2 - EDIT QUESTION</h2>
+          <span class="draft">Current draft</span>
         </div>
 
-        <label for="frontText">Front (Question/Prompt)</label>
-        <textarea id="frontText" rows="3" placeholder="What is photosynthesis?"></textarea>
+        <input id="frontText" type="text" placeholder="Question text" />
 
-        <label for="backText">Back (Answer)</label>
-        <textarea id="backText" rows="3" placeholder="Process plants use to convert light to chemical energy."></textarea>
-
-        <label class="checkbox">
-          <input id="isMultipleChoice" type="checkbox" />
-          <span>Treat as multiple choice</span>
-        </label>
-
-        <label for="optionsText">Options (one per line, optional)</label>
-        <textarea id="optionsText" rows="4" placeholder="A) Option one&#10;B) Option two&#10;C) Option three"></textarea>
-
-        <div id="correctAnswerBlock" class="correct-answer hidden">
-          <div class="row between">
-            <label>Select Correct Answer</label>
-            <span class="hint">Choose one</span>
-          </div>
-          <div id="correctAnswerList" class="correct-list"></div>
+        <div class="option-row">
+          <label>A.</label>
+          <input id="optionA" type="text" placeholder="Option 1" />
+          <button class="mark-btn" data-index="0">Mark correct</button>
         </div>
+        <div class="option-row">
+          <label>B.</label>
+          <input id="optionB" type="text" placeholder="Option 2" />
+          <button class="mark-btn" data-index="1">Mark correct</button>
+        </div>
+        <div class="option-row">
+          <label>C.</label>
+          <input id="optionC" type="text" placeholder="Option 3" />
+          <button class="mark-btn" data-index="2">Mark correct</button>
+        </div>
+        <div class="option-row">
+          <label>D.</label>
+          <input id="optionD" type="text" placeholder="Option 4" />
+          <button class="mark-btn" data-index="3">Mark correct</button>
+        </div>
+
+        <input id="backText" type="text" placeholder="Explanation / rationale (optional)" />
 
         <label class="checkbox">
           <input id="forceAddDuplicates" type="checkbox" />
           <span>Force add duplicates</span>
         </label>
 
-        <button id="addCardBtn">Add Card</button>
+        <button id="addCardBtn" class="full primary">+ Add to Snapshot List</button>
         <p id="addMessage" class="hint"></p>
       </section>
 
       <section class="card section">
         <div class="row between">
-          <h2>Cards in Set</h2>
+          <h2>Snapshot List</h2>
           <span id="cardCount">0</span>
         </div>
         <ul id="cardsList" class="cards"></ul>
@@ -86,23 +100,27 @@
           <span id="batchCount">0</span>
         </div>
         <div class="row gap">
-          <button id="addBatchBtn">Add All High Confidence</button>
+          <button id="addBatchBtn" class="ghost">Add All High Confidence</button>
           <button id="clearBatchBtn" class="ghost">Clear Queue</button>
         </div>
         <ul id="batchList" class="batch-list"></ul>
-        <p class="hint">Low confidence items are flagged so you can review before adding.</p>
       </section>
 
       <section class="card section">
         <h2>OCR Image (Optional)</h2>
-        <label for="openAiKey">OpenAI API Key</label>
-        <input id="openAiKey" type="password" placeholder="sk-..." />
+        <input id="openAiKey" type="password" placeholder="OpenAI key (sk-...)" />
         <div class="row gap">
           <button id="saveKeyBtn" class="ghost">Save Key</button>
-          <button id="ocrImageBtn">Import From Image</button>
+          <button id="ocrImageBtn" class="ghost">Import From Image</button>
         </div>
         <input id="ocrImageInput" type="file" accept="image/*" class="hidden" />
-        <p class="hint">Uses OCR to extract text from an image, then parses it into question blocks.</p>
+      </section>
+
+      <section class="card section">
+        <label for="setTitle">Set Title</label>
+        <input id="setTitle" type="text" placeholder="Biology Chapter 3" />
+        <label for="setDescription">Set Description</label>
+        <textarea id="setDescription" rows="2" placeholder="Quick review set"></textarea>
       </section>
 
       <section class="card section">
@@ -110,9 +128,6 @@
           <button id="downloadBtn">Download Qudoro JSON</button>
           <button id="copyBtn" class="ghost">Copy JSON</button>
         </div>
-        <p class="hint">
-          In Qudoro: <strong>Settings -> Data -> Import Data</strong> and choose the downloaded file.
-        </p>
       </section>
     </main>
 
