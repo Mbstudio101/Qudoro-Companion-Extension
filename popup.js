@@ -4,6 +4,8 @@ const state = {
   batchQueue: [],
 };
 
+const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
+
 const setTitleEl = document.getElementById('setTitle');
 const setDescriptionEl = document.getElementById('setDescription');
 const frontTextEl = document.getElementById('frontText');
@@ -17,6 +19,8 @@ const correctAnswerBlockEl = document.getElementById('correctAnswerBlock');
 const correctAnswerListEl = document.getElementById('correctAnswerList');
 const batchCountEl = document.getElementById('batchCount');
 const batchListEl = document.getElementById('batchList');
+const openAiKeyEl = document.getElementById('openAiKey');
+const ocrImageInputEl = document.getElementById('ocrImageInput');
 
 const addCardBtn = document.getElementById('addCardBtn');
 const downloadBtn = document.getElementById('downloadBtn');
@@ -25,6 +29,8 @@ const captureSelectionBtn = document.getElementById('captureSelectionBtn');
 const pasteClipboardBtn = document.getElementById('pasteClipboardBtn');
 const addBatchBtn = document.getElementById('addBatchBtn');
 const clearBatchBtn = document.getElementById('clearBatchBtn');
+const ocrImageBtn = document.getElementById('ocrImageBtn');
+const saveKeyBtn = document.getElementById('saveKeyBtn');
 
 const now = () => Date.now();
 
@@ -33,6 +39,60 @@ const uid = () =>
 
 function cleanText(value) {
   return (value || '').replace(/\r\n/g, '\n').trim();
+}
+
+function normalizeQuestion(value) {
+  return cleanText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildBigrams(value) {
+  if (!value) return [];
+  if (value.length < 2) return [value];
+  const grams = [];
+  for (let i = 0; i < value.length - 1; i += 1) grams.push(value.slice(i, i + 2));
+  return grams;
+}
+
+function diceCoefficient(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+
+  const aBigrams = buildBigrams(a);
+  const bBigrams = buildBigrams(b);
+  const counts = new Map();
+  aBigrams.forEach((gram) => counts.set(gram, (counts.get(gram) || 0) + 1));
+
+  let overlap = 0;
+  bBigrams.forEach((gram) => {
+    const count = counts.get(gram) || 0;
+    if (count > 0) {
+      overlap += 1;
+      counts.set(gram, count - 1);
+    }
+  });
+
+  return (2 * overlap) / (aBigrams.length + bBigrams.length);
+}
+
+function findDuplicateCard(front) {
+  const normalized = normalizeQuestion(front);
+  if (!normalized) return null;
+
+  for (const card of state.cards) {
+    const cardNorm = normalizeQuestion(card.content);
+    if (!cardNorm) continue;
+    if (cardNorm === normalized) return card;
+
+    const lengthDiff = Math.abs(cardNorm.length - normalized.length);
+    const allowedDiff = Math.max(8, Math.round(normalized.length * 0.25));
+    if (lengthDiff <= allowedDiff && diceCoefficient(cardNorm, normalized) >= 0.9) return card;
+  }
+
+  return null;
 }
 
 function parseOptions(raw) {
@@ -193,17 +253,28 @@ function splitIntoBlocks(raw) {
 
 function parseBatchInput(raw) {
   const blocks = splitIntoBlocks(raw);
+  const seen = new Set();
+
   return blocks
     .map((block) => {
       const parsed = parseQuestionBlock(block);
+      const confidence = scoreConfidence(parsed);
+      const signature = normalizeQuestion(parsed.front || block);
       return {
         id: uid(),
         parsed,
-        confidence: scoreConfidence(parsed),
-        isLowConfidence: scoreConfidence(parsed) < 0.55,
+        confidence,
+        isLowConfidence: confidence < 0.55,
+        signature,
       };
     })
-    .filter((item) => item.parsed.front || item.parsed.options.length || item.parsed.back);
+    .filter((item) => item.parsed.front || item.parsed.options.length || item.parsed.back)
+    .filter((item) => {
+      if (!item.signature) return true;
+      if (seen.has(item.signature)) return false;
+      seen.add(item.signature);
+      return true;
+    });
 }
 
 function renderCorrectAnswerPicker() {
@@ -268,6 +339,7 @@ function renderCards() {
       state.cards.splice(idx, 1);
       persist();
       renderCards();
+      renderBatchQueue();
     });
 
     li.appendChild(span);
@@ -281,6 +353,8 @@ function renderBatchQueue() {
   batchCountEl.textContent = String(state.batchQueue.length);
 
   state.batchQueue.forEach((item, index) => {
+    const duplicateCard = findDuplicateCard(item.parsed.front);
+
     const li = document.createElement('li');
     li.className = 'batch-item';
 
@@ -292,15 +366,18 @@ function renderBatchQueue() {
     question.textContent = `${index + 1}. ${item.parsed.front || '(Missing question)'}`;
 
     const badge = document.createElement('span');
-    badge.className = `badge ${item.isLowConfidence ? 'badge-low' : 'badge-high'}`;
-    badge.textContent = `${item.isLowConfidence ? 'Low' : 'High'} ${(item.confidence * 100).toFixed(0)}%`;
+    badge.className = `badge ${(item.isLowConfidence || duplicateCard) ? 'badge-low' : 'badge-high'}`;
+    const badgeStatus = duplicateCard ? 'Duplicate' : (item.isLowConfidence ? 'Low' : 'High');
+    badge.textContent = `${badgeStatus} ${(item.confidence * 100).toFixed(0)}%`;
 
     head.appendChild(question);
     head.appendChild(badge);
 
     const meta = document.createElement('div');
     meta.className = 'batch-meta';
-    meta.textContent = `${item.parsed.options.length} option(s)${item.parsed.correctIndex !== null ? ' • answer detected' : ''}`;
+    const duplicateText = duplicateCard ? ' • duplicate in cards list' : '';
+    const answerText = item.parsed.correctIndex !== null ? ' • answer detected' : '';
+    meta.textContent = `${item.parsed.options.length} option(s)${answerText}${duplicateText}`;
 
     const actions = document.createElement('div');
     actions.className = 'batch-actions';
@@ -338,7 +415,7 @@ function showMessage(message, isError = false) {
   addMessageEl.style.color = isError ? '#dc2626' : '#16a34a';
   setTimeout(() => {
     if (addMessageEl.textContent === message) addMessageEl.textContent = '';
-  }, 3000);
+  }, 3200);
 }
 
 function currentSetMeta() {
@@ -350,12 +427,8 @@ function currentSetMeta() {
 function buildCard(front, back, options, correctIndex) {
   const isMc = options.length >= 2;
   if (!front) return null;
-
   if (!isMc && !back) return null;
-
-  if (isMc && (correctIndex === null || correctIndex < 0 || correctIndex >= options.length)) {
-    return null;
-  }
+  if (isMc && (correctIndex === null || correctIndex < 0 || correctIndex >= options.length)) return null;
 
   const answerText = isMc ? options[correctIndex] : back;
 
@@ -383,6 +456,12 @@ function createCardFromInputs() {
   const options = parseOptions(optionsTextEl.value);
   const isMc = Boolean(isMultipleChoiceEl.checked && options.length >= 2);
 
+  const duplicateCard = findDuplicateCard(front);
+  if (duplicateCard) {
+    showMessage('Duplicate blocked: this question already exists in your cards list.', true);
+    return;
+  }
+
   const card = buildCard(front, back, isMc ? options : [], isMc ? state.selectedCorrectIndex : null);
   if (!card) {
     showMessage('Review this card: missing question, answer, or correct option.', true);
@@ -392,6 +471,7 @@ function createCardFromInputs() {
   state.cards.push(card);
   persist();
   renderCards();
+  renderBatchQueue();
   showMessage('Card added.');
 
   frontTextEl.value = '';
@@ -422,6 +502,14 @@ function addSingleBatchItem(itemId) {
   const item = state.batchQueue.find((entry) => entry.id === itemId);
   if (!item) return;
 
+  const duplicateCard = findDuplicateCard(item.parsed.front);
+  if (duplicateCard) {
+    showMessage('Duplicate blocked: this batch question is already in your cards list.', true);
+    state.batchQueue = state.batchQueue.filter((entry) => entry.id !== itemId);
+    renderBatchQueue();
+    return;
+  }
+
   const card = buildCard(item.parsed.front, item.parsed.back, item.parsed.options, item.parsed.correctIndex);
   if (!card) {
     loadParsedIntoEditor(item.parsed);
@@ -450,11 +538,17 @@ function addAllHighConfidence() {
   }
 
   let added = 0;
+  let skippedDuplicates = 0;
   const remaining = [];
 
   state.batchQueue.forEach((item) => {
     if (item.isLowConfidence) {
       remaining.push(item);
+      return;
+    }
+
+    if (findDuplicateCard(item.parsed.front)) {
+      skippedDuplicates += 1;
       return;
     }
 
@@ -472,7 +566,7 @@ function addAllHighConfidence() {
   persist();
   renderCards();
   renderBatchQueue();
-  showMessage(`Added ${added} card(s). ${remaining.length} item(s) still need review.`);
+  showMessage(`Added ${added} card(s). Skipped ${skippedDuplicates} duplicate(s). ${remaining.length} need review.`);
 }
 
 function buildQudoroExport() {
@@ -529,10 +623,7 @@ function applyParsedContent(raw, sourceLabel) {
   if (parsedItems.length === 1) {
     loadParsedIntoEditor(parsedItems[0].parsed);
     const isLow = parsedItems[0].isLowConfidence;
-    showMessage(
-      `${sourceLabel} parsed${isLow ? ' (low confidence, please review).' : '.'}`,
-      isLow
-    );
+    showMessage(`${sourceLabel} parsed${isLow ? ' (low confidence, please review).' : '.'}`, isLow);
     return;
   }
 
@@ -541,8 +632,7 @@ function applyParsedContent(raw, sourceLabel) {
   loadParsedIntoEditor(parsedItems[0].parsed);
 
   const lowCount = parsedItems.filter((item) => item.isLowConfidence).length;
-  const msg = `${sourceLabel} parsed ${parsedItems.length} items. ${lowCount} low-confidence.`;
-  showMessage(msg, lowCount > 0);
+  showMessage(`${sourceLabel} parsed ${parsedItems.length} items. ${lowCount} low-confidence.`, lowCount > 0);
 }
 
 async function captureFromSelection() {
@@ -565,11 +655,92 @@ async function fillFromClipboard() {
   applyParsedContent(text, 'Clipboard');
 }
 
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Could not read image file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function extractOcrText(responseBody) {
+  if (typeof responseBody.output_text === 'string' && cleanText(responseBody.output_text)) {
+    return cleanText(responseBody.output_text);
+  }
+
+  const outputs = Array.isArray(responseBody.output) ? responseBody.output : [];
+  const textParts = [];
+  outputs.forEach((out) => {
+    const content = Array.isArray(out.content) ? out.content : [];
+    content.forEach((entry) => {
+      if (typeof entry.text === 'string') textParts.push(entry.text);
+    });
+  });
+
+  return cleanText(textParts.join('\n'));
+}
+
+async function runOcrFromImage(file) {
+  const apiKey = cleanText(openAiKeyEl.value);
+  if (!apiKey) {
+    showMessage('Add your OpenAI API key first for OCR import.', true);
+    return;
+  }
+  if (!file) {
+    showMessage('Choose an image first.', true);
+    return;
+  }
+
+  const imageDataUrl = await fileToDataUrl(file);
+  showMessage('Running OCR on image...');
+
+  const response = await fetch(OPENAI_RESPONSES_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-4.1-mini',
+      input: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: 'Extract only the quiz/study text from this image with line breaks preserved. Do not explain.',
+            },
+            {
+              type: 'input_image',
+              image_url: imageDataUrl,
+            },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`OCR request failed (${response.status}): ${errText.slice(0, 180)}`);
+  }
+
+  const data = await response.json();
+  const extracted = extractOcrText(data);
+  if (!extracted) {
+    throw new Error('OCR returned no text. Try a clearer image.');
+  }
+
+  applyParsedContent(extracted, 'OCR image');
+}
+
 function persist() {
   const payload = {
     setTitle: setTitleEl.value,
     setDescription: setDescriptionEl.value,
     cards: state.cards,
+    openAiKey: openAiKeyEl.value,
   };
   chrome.storage.local.set({ qudoroCompanion: payload });
 }
@@ -580,6 +751,7 @@ function hydrate() {
     if (!data) return;
     setTitleEl.value = data.setTitle || '';
     setDescriptionEl.value = data.setDescription || '';
+    openAiKeyEl.value = data.openAiKey || '';
     state.cards = Array.isArray(data.cards) ? data.cards : [];
     renderCards();
   });
@@ -587,6 +759,11 @@ function hydrate() {
 
 setTitleEl.addEventListener('input', persist);
 setDescriptionEl.addEventListener('input', persist);
+openAiKeyEl.addEventListener('change', persist);
+saveKeyBtn.addEventListener('click', () => {
+  persist();
+  showMessage('API key saved locally in this extension.');
+});
 optionsTextEl.addEventListener('input', () => {
   if (state.selectedCorrectIndex !== null) {
     const options = parseOptions(optionsTextEl.value);
@@ -610,6 +787,14 @@ captureSelectionBtn.addEventListener('click', () => {
 });
 pasteClipboardBtn.addEventListener('click', () => {
   fillFromClipboard().catch(() => showMessage('Clipboard read failed. Allow clipboard permission and try again.', true));
+});
+ocrImageBtn.addEventListener('click', () => {
+  ocrImageInputEl.value = '';
+  ocrImageInputEl.click();
+});
+ocrImageInputEl.addEventListener('change', () => {
+  const file = ocrImageInputEl.files && ocrImageInputEl.files[0];
+  runOcrFromImage(file).catch((err) => showMessage(err.message || 'OCR import failed.', true));
 });
 
 hydrate();

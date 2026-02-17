@@ -81,6 +81,18 @@
       </section>
 
       <section class="card section">
+        <h2>OCR Image (Optional)</h2>
+        <label for="openAiKey">OpenAI API Key</label>
+        <input id="openAiKey" type="password" placeholder="sk-..." />
+        <div class="row gap">
+          <button id="saveKeyBtn" class="ghost">Save Key</button>
+          <button id="ocrImageBtn">Import From Image</button>
+        </div>
+        <input id="ocrImageInput" type="file" accept="image/*" class="hidden" />
+        <p class="hint">Uses OCR to extract text from an image, then parses it into question blocks.</p>
+      </section>
+
+      <section class="card section">
         <div class="row gap">
           <button id="downloadBtn">Download Qudoro JSON</button>
           <button id="copyBtn" class="ghost">Copy JSON</button>
