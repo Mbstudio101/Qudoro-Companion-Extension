@@ -21,6 +21,7 @@ const batchCountEl = document.getElementById('batchCount');
 const batchListEl = document.getElementById('batchList');
 const openAiKeyEl = document.getElementById('openAiKey');
 const ocrImageInputEl = document.getElementById('ocrImageInput');
+const forceAddDuplicatesEl = document.getElementById('forceAddDuplicates');
 
 const addCardBtn = document.getElementById('addCardBtn');
 const downloadBtn = document.getElementById('downloadBtn');
@@ -456,7 +457,7 @@ function createCardFromInputs() {
   const options = parseOptions(optionsTextEl.value);
   const isMc = Boolean(isMultipleChoiceEl.checked && options.length >= 2);
 
-  const duplicateCard = findDuplicateCard(front);
+  const duplicateCard = !forceAddDuplicatesEl.checked ? findDuplicateCard(front) : null;
   if (duplicateCard) {
     showMessage('Duplicate blocked: this question already exists in your cards list.', true);
     return;
@@ -502,7 +503,7 @@ function addSingleBatchItem(itemId) {
   const item = state.batchQueue.find((entry) => entry.id === itemId);
   if (!item) return;
 
-  const duplicateCard = findDuplicateCard(item.parsed.front);
+  const duplicateCard = !forceAddDuplicatesEl.checked ? findDuplicateCard(item.parsed.front) : null;
   if (duplicateCard) {
     showMessage('Duplicate blocked: this batch question is already in your cards list.', true);
     state.batchQueue = state.batchQueue.filter((entry) => entry.id !== itemId);
@@ -547,7 +548,7 @@ function addAllHighConfidence() {
       return;
     }
 
-    if (findDuplicateCard(item.parsed.front)) {
+    if (!forceAddDuplicatesEl.checked && findDuplicateCard(item.parsed.front)) {
       skippedDuplicates += 1;
       return;
     }
@@ -741,6 +742,7 @@ function persist() {
     setDescription: setDescriptionEl.value,
     cards: state.cards,
     openAiKey: openAiKeyEl.value,
+    forceAddDuplicates: Boolean(forceAddDuplicatesEl.checked),
   };
   chrome.storage.local.set({ qudoroCompanion: payload });
 }
@@ -752,14 +754,17 @@ function hydrate() {
     setTitleEl.value = data.setTitle || '';
     setDescriptionEl.value = data.setDescription || '';
     openAiKeyEl.value = data.openAiKey || '';
+    forceAddDuplicatesEl.checked = Boolean(data.forceAddDuplicates);
     state.cards = Array.isArray(data.cards) ? data.cards : [];
     renderCards();
+    renderBatchQueue();
   });
 }
 
 setTitleEl.addEventListener('input', persist);
 setDescriptionEl.addEventListener('input', persist);
 openAiKeyEl.addEventListener('change', persist);
+forceAddDuplicatesEl.addEventListener('change', persist);
 saveKeyBtn.addEventListener('click', () => {
   persist();
   showMessage('API key saved locally in this extension.');
